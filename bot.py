@@ -39,13 +39,14 @@ Here’s what I can do for you:
 📤 Use the command `/send <your message>` to send a message to a connected Discord server.
 📤 Use the command `/initialize <webhook_url>` to send a message to a connect a Discord server.
 📤 Use the command `/sendFile ` then send the file to send a file and image to a Discord server.
+📤 Use the command `/discordHook ` to know how to get the discordHook of the discord server.
 
 💬 Just type:
 `/send Hello Discord!`
 
 ⚙️ More features coming soon!
 
-Type /help to see available commands.
+Type /start to see available commands.
 
 🚀 Let's get started!
     """
@@ -162,6 +163,28 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     os.remove(file_path)
     await update.message.reply_text("✅ Image sent successfully to Discord!")
 
+async def discord_hook_guide(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Show typing/loading while uploading
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_VIDEO)
+
+    await update.message.reply_text(
+        "🎬 Here's a video guide to help you get your Discord webhook URL:"
+    )
+
+    with open("videoplayback.mp4", "rb") as video_file:
+        await update.message.reply_video(
+            video=video_file,
+            caption=(
+                "🔗 Steps:\n"
+                "1. Open your Discord Server\n"
+                "2. Go to a channel → ⚙️ Edit Channel → Integrations\n"
+                "3. Create/Copy Webhook\n"
+                "4. Use `/initialize <webhook_url>` here\n\n"
+                "You're all set! 🚀"
+            )
+        )
+
+
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -173,6 +196,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("sendFile", send_file_command))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    app.add_handler(CommandHandler("discordHook", discord_hook_guide))
 
 
     print("Bot is running... (Press CTRL+C to stop)")
