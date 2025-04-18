@@ -5,8 +5,12 @@ import os
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
+from telegram.constants import ChatAction
 
 load_dotenv()
+
+DISCORD_MAX_FILE_SIZE = 2.5 * 1024 * 1024  # 2.5 MB in bytes
+send_file_ready = {}
 
 # Replace with your own Telegram bot token from @BotFather
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -33,11 +37,12 @@ I'm divineBot, your bridge between Telegram and Discord.
 Here’s what I can do for you:
 
 📤 Use the command `/send <your message>` to send a message to a connected Discord server.
+📤 Use the command `/initialize <webhook_url>` to send a message to a connect a Discord server.
+📤 Use the command `/sendFile ` then send the file to send a file and image to a Discord server.
 
 💬 Just type:
 `/send Hello Discord!`
 
-🔒 Only authorized users can use this bot (if enabled).
 ⚙️ More features coming soon!
 
 Type /help to see available commands.
@@ -93,6 +98,70 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message.text
     print(f"Message from {user}: {message}")
 
+async def send_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    user = collection.find_one({"user_id": user_id})
+    if not user or "webhook" not in user:
+        await update.message.reply_text("❌ Please initialize your Discord webhook first using /initialize.")
+        return
+
+    send_file_ready[user_id] = True
+    await update.message.reply_text("📎 Please now send the image or document (max 2.5MB) you want to send.")
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    userName = update.effective_user.first_name
+    user_id = update.effective_user.id
+    if not send_file_ready.get(user_id):
+        return  # Ignore if not triggered via /sendFile
+
+    send_file_ready[user_id] = False
+    document = update.message.document
+    file = await document.get_file()
+    file_path = f"{user_id}_{document.file_name}"
+    await file.download_to_drive(file_path)
+
+    file_size = os.path.getsize(file_path)
+    if file_size > 2.5 * 1024 * 1024:
+        os.remove(file_path)
+        await update.message.reply_text("❌ File too large! Max file size is 2.5MB.")
+        return
+
+    user = collection.find_one({"user_id": user_id})
+    webhook_url = user["webhook"]
+
+    with open(file_path, 'rb') as doc:
+        requests.post(webhook_url, files={"file": doc}, data={"content": f"📎 File from Telegram user {userName}"})
+
+    os.remove(file_path)
+    await update.message.reply_text("✅ File sent successfully to Discord!")
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    userName = update.effective_user.first_name
+    user_id = update.effective_user.id
+    if not send_file_ready.get(user_id):
+        return
+
+    send_file_ready[user_id] = False
+    photo = update.message.photo[-1]
+    file = await photo.get_file()
+    file_path = f"{user_id}_photo.jpg"
+    await file.download_to_drive(file_path)
+
+    file_size = os.path.getsize(file_path)
+    if file_size > 2.5 * 1024 * 1024:
+        os.remove(file_path)
+        await update.message.reply_text("❌ File too large! Max file size is 2.5MB.")
+        return
+
+    user = collection.find_one({"user_id": user_id})
+    webhook_url = user["webhook"]
+
+    with open(file_path, 'rb') as img:
+        requests.post(webhook_url, files={"file": img}, data={"content": f"📷 Image from Telegram user {userName}"})
+
+    os.remove(file_path)
+    await update.message.reply_text("✅ Image sent successfully to Discord!")
+
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -101,6 +170,9 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("send", send_command))
     app.add_handler(CommandHandler("initialize", initialize))
+    app.add_handler(CommandHandler("sendFile", send_file_command))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
 
     print("Bot is running... (Press CTRL+C to stop)")
